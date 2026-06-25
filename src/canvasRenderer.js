@@ -1,5 +1,6 @@
 import { CANVAS, EDGES, NODES, SENSOR_CFG } from "./mazeData.js";
 import { COLORS, PALETTE } from "./theme.js";
+import { buildDebugSnapshot, TOKNAME } from "./mazeLogic.js";
 
 export function classify(r, g, b) {
   const refl = Math.round(((0.299 * r + 0.587 * g + 0.114 * b) / 255) * 100);
@@ -92,6 +93,7 @@ export function drawSimulationCanvas(canvas, bitmap, state, sensorCfgKey) {
       ctx.fillText(node.label, CANVAS.tx(node.x), CANVAS.ty(node.y));
     }
   });
+  drawAlgorithmOverlay(ctx, state);
 
   const cfg = SENSOR_CFG[sensorCfgKey];
   const ch = Math.cos(state.heading);
@@ -132,6 +134,87 @@ export function drawSimulationCanvas(canvas, bitmap, state, sensorCfgKey) {
     bits: [rL.bit, rC.bit, rR.bit],
     refl: { L: rL.refl, C: rC.refl, R: rR.refl },
   };
+}
+
+function drawAlgorithmOverlay(ctx, state) {
+  const debug = buildDebugSnapshot(state);
+  if (!debug) return;
+
+  Object.keys(state.seenJ).forEach((id) => {
+    const node = NODES[id];
+    if (!node || node.kind !== "junction") return;
+    ctx.beginPath();
+    ctx.arc(CANVAS.tx(node.x), CANVAS.ty(node.y), 17, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(0, 163, 156, .72)";
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+    drawBadge(ctx, CANVAS.tx(node.x), CANVAS.ty(node.y) + 24, "seen", PALETTE.my, "#021513");
+  });
+
+  if (debug.decision.kind !== "JCT") {
+    drawReturnBadge(ctx, state, debug);
+    return;
+  }
+
+  if (debug.decision && state.legs[state.li].mode === "RETURN") {
+    drawReturnBadge(ctx, state, debug);
+    return;
+  }
+
+  const center = NODES[debug.decision.node];
+  if (!center) return;
+  const cx = CANVAS.tx(center.x);
+  const cy = CANVAS.ty(center.y);
+
+  debug.decision.candidates.forEach((row) => {
+    if (!row.node) return;
+    const target = NODES[row.node];
+    if (!target) return;
+    const dx = target.x - center.x;
+    const dy = target.y - center.y;
+    const len = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / len;
+    const uy = dy / len;
+    const x = cx + ux * 39;
+    const y = cy + uy * 39;
+    const active = row.selected;
+    const color = active ? PALETTE.flow : row.done ? "#667382" : PALETTE.sensor;
+    drawBadge(ctx, x, y, `${row.dir}->${row.node}`, color, active ? "#1b1200" : "#101216");
+    if (active) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + ux * 60, cy + uy * 60);
+      ctx.strokeStyle = PALETTE.flow;
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      ctx.stroke();
+    }
+  });
+}
+
+function drawReturnBadge(ctx, state, debug) {
+  if (state.legs[state.li].mode !== "RETURN") return;
+  const path = debug.pathState;
+  const label = `path[${path.currentReadIndex}] ${TOKNAME[path.sourceToken] || "-"} -> ${TOKNAME[path.invertedToken] || "-"}`;
+  drawBadge(ctx, CANVAS.tx(state.x), CANVAS.ty(state.y) - 28, label, PALETTE.action, "#061704");
+}
+
+function drawBadge(ctx, x, y, label, bg, fg) {
+  ctx.save();
+  ctx.font = "800 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+  const padX = 6;
+  const width = ctx.measureText(label).width + padX * 2;
+  const height = 18;
+  const left = x - width / 2;
+  const top = y - height / 2;
+  ctx.fillStyle = bg;
+  roundedRect(ctx, left, top, width, height, 5);
+  ctx.fill();
+  ctx.fillStyle = fg;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x, y + .5);
+  ctx.restore();
 }
 
 function drawSensor(ctx, point, reading) {

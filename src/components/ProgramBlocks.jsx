@@ -88,7 +88,7 @@ export function ProgramDiagram({ mode, on, patStr, act, peek, tok }) {
   return (
     <section className="program-shell">
       <div className="program-shell__title">
-        EV3-G 프로그램 - {mode === "EXPLORE" ? "탐사 루프 (EXPLORE)" : "복귀 루프 (RETURN)"}
+        EV3-G 프로그램 - {mode === "EXPLORE" ? "탐사: 센서로 판단하고 회전을 기록" : "복귀: 새 판단 없이 기록만 재생"}
       </div>
       {mode === "EXPLORE" ? <ExploreProgram on={on} patStr={patStr} act={act} peek={peek} /> : <ReturnProgram on={on} tok={tok} />}
       <ProgramLegend />
@@ -119,7 +119,7 @@ function ExploreProgram({ on, patStr, act, peek }) {
       <LoopFrame label="MAIN" color={PALETTE.flow}>
         <EvBlock color={PALETTE.start} name="Start" icon={Play} foot="" width={56} />
         <Conn />
-        <EvBlock color={PALETTE.my} name="Follow_Until_Event" icon={Route} foot="LF loop" active={following} width={112} />
+        <EvBlock color={PALETTE.my} name="Follow_Until_Event" icon={Route} foot="선 따라가다 멈춤" active={following} width={118} />
         <Conn />
         <SwitchBlock
           activeCase={obstacle ? 1 : 0}
@@ -128,11 +128,11 @@ function ExploreProgram({ on, patStr, act, peek }) {
               label: "Event=0",
               body: (
                 <div className="ev-flow-row">
-                  <EvBlock color={PALETTE.my} name="Read_Pattern" icon={ScanLine} foot={patStr} active={deciding || peekOn} width={86} />
+                  <EvBlock color={PALETTE.my} name="Read_Pattern" icon={ScanLine} foot={`센서=${patStr}`} active={deciding || peekOn} width={92} />
                   <Conn />
                   <div className="peek-box" data-active={peekOn ? "true" : "false"}>
-                    <div className="peek-box__title">111(좌·우)? - Peek 직진</div>
-                    <EvBlock color={PALETTE.sensor} name="Peek 직진" icon={Eye} foot="C센서 판독" active={peekOn} width={82} />
+                    <div className="peek-box__title">좌·우가 보이면 모양 확인</div>
+                    <EvBlock color={PALETTE.sensor} name="Peek 직진" icon={Eye} foot="가운데 확인" active={peekOn} width={86} />
                     <PeekCase bits="010" label="D형(십자) - 직진 먼저" active={pType === "D"} />
                     <PeekCase bits="000" label="B형(T) - 후진·좌선" active={pType === "B"} />
                   </div>
@@ -144,11 +144,11 @@ function ExploreProgram({ on, patStr, act, peek }) {
                       </div>
                     ))}
                   </div>
-                  <EvBlock color={PALETTE.my} name="Turn_Until_Line" icon={RotateCw} foot={act} active={on("TURN")} width={92} />
+                  <EvBlock color={PALETTE.my} name="Turn_Until_Line" icon={RotateCw} foot={`회전 ${act}`} active={on("TURN")} width={96} />
                   <Conn />
-                  <EvBlock color={PALETTE.flow} name="한 분기 우선" icon={Hand} foot="F까지->유턴" active={discoverOn} width={88} />
+                  <EvBlock color={PALETTE.flow} name="한 분기 우선" icon={Hand} foot="먼저 끝내기" active={discoverOn} width={92} />
                   <Conn />
-                  <EvBlock color={PALETTE.data} name="Array Write" icon={Download} foot="MOVELOG" active={on("READ")} width={78} />
+                  <EvBlock color={PALETTE.data} name="Array Write" icon={Download} foot="회전 기록" active={on("READ")} width={84} />
                 </div>
               ),
             },
@@ -160,7 +160,7 @@ function ExploreProgram({ on, patStr, act, peek }) {
         />
       </LoopFrame>
       <div className="program-note">
-        peek는 분기 최초 진입 1회만 실행합니다. E에서는 F 분기까지 확인한 뒤 E로 복귀하고, 5를 먼저 처리한 다음 F-6-7로 진행합니다.
+        탐사에서는 센서 패턴으로 갈림길을 판단하고, 실제로 한 회전만 path[]에 저장합니다. peek는 좌·우가 동시에 보이는 분기에서 최초 1회만 실행합니다.
       </div>
     </>
   );
@@ -168,17 +168,22 @@ function ExploreProgram({ on, patStr, act, peek }) {
 
 function ReturnProgram({ on, tok }) {
   return (
-    <LoopFrame label="RETURN" color={PALETTE.action}>
-      <EvBlock color={PALETTE.start} name="Start" icon={Play} foot="MODE=1" width={56} />
-      <Conn />
-      <EvBlock color={PALETTE.data} name="Read Idx(rev)" icon={Upload} foot="i=LEN-1-k" active={on("READ")} width={92} />
-      <Conn />
-      <EvBlock color={PALETTE.data} name="Invert L/R" icon={ArrowLeftRight} foot={tok ? `-> ${TOKNAME[tok]}` : "1<->3"} active={on("READ")} width={82} />
-      <Conn />
-      <EvBlock color={PALETTE.my} name="Follow_Until_Event" icon={Route} foot="추종 유지" active={on("FOLLOW")} width={112} />
-      <Conn />
-      <EvBlock color={PALETTE.my} name="Turn_Until_Line" icon={Shuffle} foot="확신 회전" active={on("TURN")} width={92} />
-    </LoopFrame>
+    <>
+      <LoopFrame label="RETURN" color={PALETTE.action}>
+        <EvBlock color={PALETTE.start} name="Start" icon={Play} foot="복귀" width={56} />
+        <Conn />
+        <EvBlock color={PALETTE.data} name="Read Idx(rev)" icon={Upload} foot="뒤에서 읽기" active={on("READ")} width={96} />
+        <Conn />
+        <EvBlock color={PALETTE.data} name="Invert L/R" icon={ArrowLeftRight} foot={tok ? `좌우반전 ${TOKNAME[tok]}` : "좌↔우"} active={on("READ")} width={94} />
+        <Conn />
+        <EvBlock color={PALETTE.my} name="Follow_Until_Event" icon={Route} foot="선은 계속 추종" active={on("FOLLOW")} width={118} />
+        <Conn />
+        <EvBlock color={PALETTE.my} name="Turn_Until_Line" icon={Shuffle} foot="기록대로 회전" active={on("TURN")} width={98} />
+      </LoopFrame>
+      <div className="program-note">
+        복귀에서는 분기를 다시 스캔하지 않습니다. path[]를 거꾸로 읽고 좌우만 바꿔서 탐사 때 지나온 길을 그대로 되돌아갑니다.
+      </div>
+    </>
   );
 }
 
