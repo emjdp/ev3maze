@@ -1,5 +1,9 @@
 # EV3 Maze Simulator
 
+[https://ev3sim.vercel.app/](https://ev3sim.vercel.app/)
+
+![EV3 Maze Simulator screenshot](docs/screenshot.png)
+
 EV3 미로 라인트레이서 알고리즘을 브라우저에서 확인하는 React 시뮬레이터입니다.
 
 - EXPLORE: 좌선우선, 111 peek, 한 분기 우선 규칙으로 모든 노드를 지나 7에 도착
