@@ -432,9 +432,9 @@ export default function App() {
       <header className="app-header">
         <div>
           <h1>
-            EV3 Lab 미로 시뮬레이터 <span>ver5</span>
+            EV3 Maze Lab <span>ver5</span>
           </h1>
-          <p>단일패스 좌선우선 + 111 peek(B/D형 변별) · MOVELOG 역재생 복귀</p>
+          <p>웹 시뮬레이터 + ev3dev 로봇 코드 · EXPLORE / RETURN 알고리즘</p>
         </div>
         <div className="mode-pills">
           <Pill active={mode === "EXPLORE"} color={PALETTE.flow}>EXPLORE</Pill>

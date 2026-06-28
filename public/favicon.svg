@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">EV3 Maze Simulator</title>
-  <desc id="desc">A compact maze route icon for the EV3 simulator.</desc>
+  <title id="title">EV3 Maze</title>
+  <desc id="desc">A compact maze route icon for EV3 Maze.</desc>
   <rect width="64" height="64" rx="14" fill="#101216"/>
   <path d="M16 49V34h20V16h17" fill="none" stroke="#f5f4ee" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M16 49V34h20" fill="none" stroke="#f6a623" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>

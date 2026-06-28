@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">EV3 Maze Simulator app icon</title>
+  <title id="title">EV3 Maze app icon</title>
   <desc id="desc">EV3 robot tracing a maze route.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">

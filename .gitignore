@@ -8,3 +8,5 @@ npm-debug.log*
 __pycache__/
 *.py[cod]
 .vscode/browse.vc.db*
+robot/logs/
+robot/config.py.bak

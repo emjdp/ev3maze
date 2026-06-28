@@ -1,7 +1,7 @@
 {
-  "name": "EV3 Maze Simulator",
+  "name": "EV3 Maze",
   "short_name": "EV3 Maze",
-  "description": "EV3 미로 라인트레이서 알고리즘을 브라우저에서 확인하는 React 시뮬레이터입니다.",
+  "description": "EV3 미로 라인트레이서용 웹 시뮬레이터와 ev3dev 로봇 프로그램입니다.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
