@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "EV3: run maze",
+      "type": "ev3devBrowser",
+      "request": "launch",
+      "program": "/home/robot/${workspaceRootFolderName}/robot/main.py",
+      "interactiveTerminal": true
+    }
+  ]
+}

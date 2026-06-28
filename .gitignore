@@ -5,3 +5,6 @@ dist/
 .env.*
 npm-debug.log*
 .vercel
+__pycache__/
+*.py[cod]
+.vscode/browse.vc.db*

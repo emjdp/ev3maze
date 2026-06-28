@@ -30,3 +30,13 @@ npm run build:pages
 - `미로_알고리즘_구현명세.md`: 알고리즘 기준 명세
 - `src/`: 배포 가능한 Vite + React 앱
 - `maze.png`: 원본 미로 참고 이미지
+- `robot/`: ev3dev-stretch에서 실행할 Python 로봇 코드
+
+## EV3
+
+```bash
+python3 robot/main.py --dry-run
+python3 -m py_compile robot/main.py robot/config.py
+```
+
+VS Code의 ev3dev-browser 확장에서 `EV3: run maze` 실행 구성을 사용합니다.
