@@ -38,9 +38,9 @@ LINE_THRESHOLD = 40
 # 센서 3개의 반사광 특성(높이·각도·LED 편차·주변광)이 서로 다를 수 있다.
 # 한 개 LINE_THRESHOLD 로 부족하면 좌/중/우를 따로 잡는다. None 이면 LINE_THRESHOLD 사용.
 #   증상: 특정 센서만 흰 바닥을 검정으로(또는 그 반대로) 오판 → 그 센서 값만 조정.
-LEFT_LINE_THRESHOLD = None
-CENTER_LINE_THRESHOLD = None
-RIGHT_LINE_THRESHOLD = None
+LEFT_LINE_THRESHOLD = 41
+CENTER_LINE_THRESHOLD = 40
+RIGHT_LINE_THRESHOLD = 41
 
 # 모터 출력(퍼센트, -100~100). 처음엔 느리고 안전하게.
 FOLLOW_SPEED = 18          # 직진 라인추종 속도
@@ -78,10 +78,6 @@ LEAF_CONFIRM_SAMPLES = 8
 #               떨려 패턴이 좀체 안정 안 되는 코스에서 확정이 빨라 중심을 덜 지나친다.
 #   증상: 분기 확정이 너무 늦어 중심을 지나친다 → "kind". 노이즈에 일찍 확정된다 → "pattern".
 EVENT_DEBOUNCE_MODE = "pattern"
-# 분기 확정 후 "분기 중심"까지 더 전진하는 시간(초). 0이면 즉시 정지.
-#   증상: 분기를 감지했는데 아직 중심 전이라 회전이 어긋남 → 값 ↑. 너무 깊이 들어가면 ↓.
-JUNCTION_CENTERING_SECONDS = 0.0
-
 # =============================================================================
 # 4. 라인 유실 복구 (000 을 무조건 막다른 길로 보지 않는다)
 # =============================================================================
@@ -113,15 +109,15 @@ UTURN_SPEED = TURN_SPEED
 
 # 회전 시작 직후 출발 선을 "다시 잡았다"고 오인하지 않도록 무시하는 시간(초).
 #   증상: 회전을 시작하자마자 멈춰 버림 → 값 ↑.
-LEFT_TURN_IGNORE_SECONDS = 0.18
-RIGHT_TURN_IGNORE_SECONDS = 0.18
+LEFT_TURN_IGNORE_SECONDS = 0.08
+RIGHT_TURN_IGNORE_SECONDS = 0.08
 # U턴은 180도라 더 오래 무시한다(첫 선을 지나치고 두 번째 선에서 멈추기 위함).
 UTURN_IGNORE_SECONDS = 0.55
 
 # 최소 회전 시간(초). 이 시간 전에는 선을 잡아도 정지하지 않는다(과소회전 방지).
 #   증상: 90도가 자꾸 덜 돌아 비스듬히 선다 → 값 ↑(부족분만큼). 과다회전이면 ↓.
-LEFT_TURN_MIN_SECONDS = 0.30
-RIGHT_TURN_MIN_SECONDS = 0.30
+LEFT_TURN_MIN_SECONDS = 0.14
+RIGHT_TURN_MIN_SECONDS = 0.14
 UTURN_MIN_SECONDS = 0.75
 
 # 회전 후 중앙센서가 선을 다시 잡을 때까지 기다리는 최대 시간(초). 넘으면 오류.
@@ -154,6 +150,14 @@ PEEK_SENSOR_SETTLE_SECONDS = 0.08
 # 직진(S) 토큰에서 분기점을 지나 다음 라인에 올라타려 잠깐 전진하는 시간(초).
 #   증상: 분기를 다 못 지나 다음 라인에 못 올라탐 → 값 ↑. 너무 멀리 가면 ↓.
 STRAIGHT_NUDGE_SECONDS = 0.22
+
+# 분기 출구를 센서로 판단한 뒤, 좌/우 90도 회전 직전에 살짝 더 전진한다.
+# 회전반경 때문에 너무 이른 위치에서 돌며 이전 선을 다시 잡는 경우 이 값을 올린다.
+# NOTE: 출구 판단 전에 먼저 전진하는 center-nudge 는 현재 제거했다.
+# 나중에 코스가 바뀌면 다시 넣을 후보로 기억할 것.
+PRE_LEFT_TURN_FORWARD_SECONDS = 0.075
+PRE_RIGHT_TURN_FORWARD_SECONDS = 0.075
+PRE_UTURN_FORWARD_SECONDS = 0.0
 
 # 회전 직후 분기 위에 머물러 생기는 거짓 이벤트를 막으려 짧게 직진하는 시간(초).
 # (예전엔 TURN_IGNORE_LINE_SECONDS 를 재사용했으나 의미가 섞여 분리했다.)
@@ -312,8 +316,10 @@ def validate_config():
     # 음수가 되면 안 되는 시간들.
     nonneg = {
         "LOOP_DELAY": LOOP_DELAY, "STRAIGHT_NUDGE_SECONDS": STRAIGHT_NUDGE_SECONDS,
+        "PRE_LEFT_TURN_FORWARD_SECONDS": PRE_LEFT_TURN_FORWARD_SECONDS,
+        "PRE_RIGHT_TURN_FORWARD_SECONDS": PRE_RIGHT_TURN_FORWARD_SECONDS,
+        "PRE_UTURN_FORWARD_SECONDS": PRE_UTURN_FORWARD_SECONDS,
         "CLEAR_JUNCTION_SECONDS": CLEAR_JUNCTION_SECONDS,
-        "JUNCTION_CENTERING_SECONDS": JUNCTION_CENTERING_SECONDS,
         "LOST_LINE_RECOVERY_SECONDS": LOST_LINE_RECOVERY_SECONDS,
         "POST_STOP_SETTLE_SECONDS": POST_STOP_SETTLE_SECONDS,
         "POST_TURN_SETTLE_SECONDS": POST_TURN_SETTLE_SECONDS,

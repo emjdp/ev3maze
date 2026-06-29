@@ -250,7 +250,7 @@ class MazeSolver(object):
                         # 방금 간 출구 말고도 안 가본 출구(잎일 수 있음)가 남았으면
                         # → 한 분기 우선: 일단 보류(U턴 복귀)하고 잎부터 끝낸다
                         self._record(UTURN)
-                        self.io.turn(UTURN)
+                        self._turn_from_junction(UTURN)
                         self._return_to_junction()
                         state[angle] = "deferred"
                     else:
@@ -272,7 +272,7 @@ class MazeSolver(object):
                 return
             token = _token_for(A_BACK, facing)
             self._record(token)
-            self.io.turn(token)
+            self._turn_from_junction(token)
             self.io.follow_to_node("EXPLORE")   # 부모 분기에 도착
             return
 
@@ -307,9 +307,16 @@ class MazeSolver(object):
         """출구로 회전 후 다음 노드까지 주행. 도착 종류(LEAF/JUNCTION) 반환."""
         token = _token_for(angle, facing)
         self._record(token)
-        self.io.turn(token)
+        self._turn_from_junction(token)
         arr = self.io.follow_to_node("EXPLORE")
         return arr.kind
+
+    def _turn_from_junction(self, token):
+        """분기에서 출구를 결정한 뒤 회전한다. 실기에서는 회전반경 보정 nudge 를 둘 수 있다."""
+        pre_turn_nudge = getattr(self.io, "pre_turn_nudge", None)
+        if pre_turn_nudge is not None:
+            pre_turn_nudge(token)
+        self.io.turn(token)
 
     def _handle_leaf(self):
         """막다른 길: 색을 읽어 도착이면 종료, 아니면 체크포인트로 보고 U턴 준비."""
@@ -330,7 +337,7 @@ class MazeSolver(object):
         """보류 분기로 회전·주행해 그 분기로 내려가 재귀 탐사."""
         token = _token_for(angle, facing)
         self._record(token)
-        self.io.turn(token)
+        self._turn_from_junction(token)
         self.io.follow_to_node("EXPLORE")   # 자식 분기에 도착
         self._explore_junction(is_root=False)  # 자식이 끝나면 여기로 되돌아온 상태로 복귀
 
@@ -347,7 +354,10 @@ class MazeSolver(object):
             # 막다른 길에서만 색을 확인한다(분기에서 컬러 모드 전환은 불필요·느림).
             if arr.kind == LEAF and self.io.read_node_color() == config.START_COLOR:
                 break                            # 출발 색을 보면 끝
-            self.io.turn(token)
+            if arr.kind == JUNCTION:
+                self._turn_from_junction(token)
+            else:
+                self.io.turn(token)
             arr = self.io.follow_to_node("RETURN")
         self.io.finish("RETURN")
         return plan
@@ -357,8 +367,11 @@ class MazeSolver(object):
     # ======================================================================
     def run_plan(self, plan, final_label="EXPLORE"):
         for token in plan:
-            self.io.follow_to_node(final_label)
-            self.io.turn(token)
+            arr = self.io.follow_to_node(final_label)
+            if arr.kind == JUNCTION:
+                self._turn_from_junction(token)
+            else:
+                self.io.turn(token)
         self.io.follow_to_node(final_label)
         self.io.finish(final_label)
         return list(plan)
@@ -424,7 +437,6 @@ class Ev3Motion(object):
         - 000(잎 후보)은 곧장 막다른 길로 보지 않고, '짧게만' 복구 전진해 재포착을
           시도한 뒤 멈춰서 제자리 재샘플한다(막다른 벽을 들이받지 않도록 보수적).
           LEAF_CONFIRM_SAMPLES + LOST_LINE_RECOVERY_SECONDS 를 모두 만족할 때만 확정.
-        - 분기 확정 시 JUNCTION_CENTERING_SECONDS 만큼 더 전진해 분기 중심에 정렬.
         """
         self._clear_junction()      # 직전 회전으로 머문 분기를 살짝 벗어남
         deb = ArrivalDebouncer(config.JUNCTION_CONFIRM_SAMPLES, config.LEAF_CONFIRM_SAMPLES,
@@ -445,7 +457,7 @@ class Ev3Motion(object):
                     leaf_since = time.time()
                 recovered = (time.time() - leaf_since) >= config.LOST_LINE_RECOVERY_SECONDS
                 if confirmed == LEAF and recovered:
-                    self._arrive(label, LEAF, bits, center=False)
+                    self._arrive(label, LEAF, bits)
                     return Arrival(LEAF)
                 if recovered:
                     self.hw.stop()      # 복구 끝: 더 전진 말고 제자리에서 재샘플
@@ -454,7 +466,7 @@ class Ev3Motion(object):
             else:
                 leaf_since = None
                 if confirmed == JUNCTION:
-                    self._arrive(label, JUNCTION, bits, center=True)
+                    self._arrive(label, JUNCTION, bits)
                     return Arrival(JUNCTION)
                 if ev == JUNCTION:
                     # 확정 전까진 천천히 전진해 분기 중심에 자리잡는다.
@@ -464,11 +476,8 @@ class Ev3Motion(object):
                     self._drive(lspeed, rspeed)
             time.sleep(config.LOOP_DELAY)
 
-    def _arrive(self, label, kind, bits, center):
-        """도착 확정 처리: (분기면) 중심 정렬 → 정지/settle → 로그."""
-        if center and config.JUNCTION_CENTERING_SECONDS > 0:
-            self._drive(config.FOLLOW_SPEED, config.FOLLOW_SPEED)
-            time.sleep(config.JUNCTION_CENTERING_SECONDS)
+    def _arrive(self, label, kind, bits):
+        """도착 확정 처리: 정지/settle → 로그."""
         self._stop()
         if config.DEBUG_EVENTS:
             print("    [EVENT] {} 확정 bits={}".format(kind, bits))
@@ -526,6 +535,24 @@ class Ev3Motion(object):
             straight = bool(bits[1])
             cross = False
         return {"L": left, "S": straight, "R": right}, cross
+
+    def pre_turn_nudge(self, token):
+        """분기 출구를 판단한 뒤, 좌/우 회전반경 보정을 위해 짧게 전진한다."""
+        if token == LEFT:
+            seconds = config.PRE_LEFT_TURN_FORWARD_SECONDS
+        elif token == RIGHT:
+            seconds = config.PRE_RIGHT_TURN_FORWARD_SECONDS
+        elif token == UTURN:
+            seconds = config.PRE_UTURN_FORWARD_SECONDS
+        else:
+            seconds = 0.0
+        if seconds <= 0:
+            return
+        self._drive(config.FOLLOW_SPEED, config.FOLLOW_SPEED)
+        time.sleep(seconds)
+        self._stop()
+        if config.POST_MOVE_SENSOR_SETTLE_SECONDS:
+            time.sleep(config.POST_MOVE_SENSOR_SETTLE_SECONDS)
 
     # ---- io 인터페이스: 회전(라인 재포착 방식) ---------------------------
     def turn(self, token):

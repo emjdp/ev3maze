@@ -41,6 +41,10 @@ class Ev3Hardware(object):
         self.right_motor = LargeMotor(config.DRIVE_RIGHT_PORT)
         # 그립&리프트 모터 (C)
         self.grip_motor = MediumMotor(config.GRIP_MOTOR_PORT)
+        # 집게 모터 장착 방향상 +회전이 '열림'이라 반대로 동작했다. 극성을 뒤집어
+        # +회전=닫힘(집기), -회전=열림(놓기)으로 맞춘다. calibrate 도 같은 인스턴스를
+        # 쓰므로 이 한 줄로 양쪽이 동시에 바로잡힌다.
+        self.grip_motor.polarity = "inversed"
 
         # 컬러센서 (좌/중/우). 중앙은 평소 반사광 모드로 둔다.
         self.left_sensor = ColorSensor(config.COLOR_LEFT_PORT)

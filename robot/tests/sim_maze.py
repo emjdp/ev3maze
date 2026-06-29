@@ -19,8 +19,8 @@ import math
 import os
 import sys
 
-# robot/ 를 import 경로에 추가 (config, solver 가 거기에 있음)
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# robot/run/ 를 import 경로에 추가 (config, solver 가 거기에 있음)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "run"))
 
 import config
 import solver

@@ -18,7 +18,17 @@
 from __future__ import print_function
 
 import argparse
+import io
 import sys
+
+# ev3dev는 로케일이 C(ASCII)라 한글 print에서 UnicodeEncodeError가 난다.
+# 진입점에서 stdout/stderr를 UTF-8로 다시 감싼다(Python 3.5 호환).
+for _name in ("stdout", "stderr"):
+    _stream = getattr(sys, _name)
+    _buffer = getattr(_stream, "buffer", None)
+    if _buffer is not None:
+        setattr(sys, _name, io.TextIOWrapper(
+            _buffer, encoding="utf-8", errors="replace", line_buffering=True))
 
 import config
 import solver

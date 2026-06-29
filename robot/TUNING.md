@@ -113,13 +113,15 @@ PYTHONDONTWRITEBYTECODE=1 python3 robot/tests/sim_maze.py
 
 분기 확정이 빠른지/늦은지 본다.
 
-값: `EVENT_DEBOUNCE_MODE`("pattern"), `JUNCTION_CONFIRM_SAMPLES`(4), `JUNCTION_CENTERING_SECONDS`(0.0), `CLEAR_JUNCTION_SECONDS`(0.18), `STRAIGHT_NUDGE_SECONDS`(0.22)
+값: `EVENT_DEBOUNCE_MODE`("pattern"), `JUNCTION_CONFIRM_SAMPLES`(4), `PRE_LEFT/RIGHT_TURN_FORWARD_SECONDS`(0.15), `CLEAR_JUNCTION_SECONDS`(0.18), `STRAIGHT_NUDGE_SECONDS`(0.22)
+
+메모: 출구 판단 전에 먼저 전진하는 center-nudge 는 현재 제거했다. 코스/로봇 조건이 바뀌면 나중에 다시 넣을 후보로 기억할 것.
 
 | 증상 | 조치 |
 |------|------|
 | 노이즈에 일찍 확정 | `EVENT_DEBOUNCE_MODE = "pattern"`, `JUNCTION_CONFIRM_SAMPLES` ↑ |
 | 분기 지나침/늦게 확정 | `"kind"` 또는 `JUNCTION_CONFIRM_SAMPLES` ↓ |
-| 중심 전에 회전 | `JUNCTION_CENTERING_SECONDS` ↑ |
+| 출구 판단은 맞는데 90도 회전 시작 위치가 너무 앞쪽 | `PRE_LEFT/RIGHT_TURN_FORWARD_SECONDS` ↑ |
 | 같은 분기 재감지 | `CLEAR_JUNCTION_SECONDS` ↑ |
 | 분기 지나 다음 라인 못 올라탐 | `STRAIGHT_NUDGE_SECONDS` ↑ |
 

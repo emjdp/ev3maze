@@ -24,6 +24,16 @@ from solver import JUNCTION, LEAF
 POLL_SECONDS = 0.05
 LIVE_SECONDS = 0.10
 ACTION_RESULT_SECONDS = 1.2
+
+# The EV3 brick's physical Back button (top-left) is grabbed by brickman and
+# kills the running program, so we never rely on it for navigation. Instead the
+# "back / exit" action is a two-button chord: hold LEFT + RIGHT together for
+# CHORD_HOLD_SECONDS. The hold requirement keeps an accidental simultaneous tap
+# (common while nudging values with LEFT/RIGHT) from escaping the screen.
+CHORD_BUTTONS = ("left", "right")
+CHORD_HOLD_SECONDS = 0.4
+BACK_HINT = "hold L+R=back"
+EXIT_HINT = "hold L+R=exit"
 DEFAULT_STRAIGHT_SECONDS = 2.0
 DEBUG_LINE_MAX_SECONDS = getattr(config, "DEBUG_LINE_MAX_SECONDS", 20.0)
 DEBUG_111_TIMEOUT_SECONDS = 10.0
@@ -178,6 +188,55 @@ for _group, _items in ADJUST_GROUPS:
     for _name, _step in _items:
         ADJUST_ITEMS.append((_group, _name, _step))
 
+# Default adjust step per config name (reused by the ACTION live-tuning screens).
+STEP_BY_NAME = {name: step for _grp, name, step in ADJUST_ITEMS}
+
+# For each ACTION, the config values that actually shape its behaviour. The
+# action screen shows these and lets the operator tweak them (UP/DOWN) and
+# re-run (ENTER) without leaving the screen, so a turn/grip/follow can be dialed
+# in iteratively. Order = most-impactful first.
+ACTION_PARAMS = {
+    "FOLLOW_ONCE": ["FOLLOW_SPEED", "KP", "SIDE_CORRECTION", "LINE_THRESHOLD"],
+    "STRAIGHT_TRIM_ON": ["FOLLOW_SPEED", "LEFT_MOTOR_TRIM", "RIGHT_MOTOR_TRIM"],
+    "STRAIGHT_TRIM_OFF": ["FOLLOW_SPEED"],
+    "TURN_LEFT": ["LEFT_TURN_SPEED", "LEFT_TURN_IGNORE_SECONDS",
+                  "LEFT_TURN_MIN_SECONDS", "LEFT_TURN_TIMEOUT_SECONDS",
+                  "LEFT_TURN_REQUIRE_LINE_CLEAR"],
+    "TURN_RIGHT": ["RIGHT_TURN_SPEED", "RIGHT_TURN_IGNORE_SECONDS",
+                   "RIGHT_TURN_MIN_SECONDS", "RIGHT_TURN_TIMEOUT_SECONDS",
+                   "RIGHT_TURN_REQUIRE_LINE_CLEAR"],
+    "TURN_UTURN": ["UTURN_SPEED", "UTURN_IGNORE_SECONDS", "UTURN_MIN_SECONDS",
+                   "UTURN_TIMEOUT_SECONDS", "UTURN_REQUIRE_LINE_CLEAR"],
+    "TURN_STRAIGHT": ["FOLLOW_SPEED", "STRAIGHT_NUDGE_SECONDS"],
+    "SENSE_EXITS": ["PEEK_FORWARD_SECONDS", "PEEK_BACK_SECONDS",
+                    "PEEK_SETTLE_SECONDS", "PEEK_SAMPLES",
+                    "PEEK_SENSOR_SETTLE_SECONDS"],
+    "READ_COLOR": ["COLOR_MODE_SETTLE_SECONDS", "COLOR_DUMMY_READS",
+                   "COLOR_MODE_RESTORE_SETTLE_SECONDS", "COLOR_CONFIRM_SAMPLES"],
+    "GRIP_CLOSE_LIFT": ["GRIP_CLOSE_DEGREES", "GRIP_SPEED", "LIFT_DEGREES",
+                        "POST_GRIP_SETTLE_SECONDS"],
+    "GRIP_RELEASE": ["GRIP_CLOSE_DEGREES", "LIFT_DEGREES", "GRIP_SPEED",
+                     "POST_RELEASE_SETTLE_SECONDS"],
+    "DETECT_AND_GRIP": ["OBSTACLE_DISTANCE_CM", "OBSTACLE_MIN_VALID_CM",
+                        "GRIP_CLOSE_DEGREES", "GRIP_SPEED", "LIFT_DEGREES"],
+}
+
+
+def default_step(value):
+    if isinstance(value, bool):
+        return 1
+    if isinstance(value, int):
+        return 1
+    return 0.01
+
+
+def action_params(step):
+    """[(config_name, adjust_step), ...] for the given ACTION step."""
+    out = []
+    for name in ACTION_PARAMS.get(step, []):
+        out.append((name, STEP_BY_NAME.get(name, default_step(getattr(config, name)))))
+    return out
+
 MENU_GROUPS = [
     ("MEASURE", MEASURE_ITEMS),
     ("ACTION", ACTION_ITEMS),
@@ -230,8 +289,15 @@ class Screen(object):
         except Exception:
             self.display = None
 
-    def show(self, lines):
-        clean = [str(line)[:28] for line in lines[:8]]
+    def show(self, lines, footer=BACK_HINT):
+        # Legacy "BACK=..." hint lines referred to the physical Back button,
+        # which now kills the program; drop them and show the chord footer at
+        # the bottom of every screen instead.
+        content = [str(line)[:28] for line in lines if not str(line).startswith("BACK=")]
+        content = content[:7]
+        if footer is not None:
+            content.append(str(footer)[:28])
+        clean = content[:8]
         text = "\n".join(clean)
         if text != self.last_text:
             print("[LCD]\n" + text)
@@ -250,20 +316,55 @@ class Screen(object):
 
 
 class ButtonEdges(object):
+    """Edge-detecting button reader.
+
+    Single buttons (up/down/left/right/enter) fire once on release. The "back"
+    event is the LEFT+RIGHT chord held for CHORD_HOLD_SECONDS — see the comment
+    near CHORD_BUTTONS for why the physical Back button is not used. While the
+    chord buttons are engaged, their individual edges are suppressed so holding
+    the chord never also registers a stray left/right.
+    """
+
     def __init__(self, hw):
         self.hw = hw
         self.prev = self.hw.button_state()
+        self._chord_since = None
+        self._chord_fired = False
+        self._suppress = False
 
     def state(self):
         return self.hw.button_state()
 
     def poll(self):
         cur = self.hw.button_state()
+        a, b = CHORD_BUTTONS
+        chord_now = cur.get(a) and cur.get(b)
         edge = None
-        for name in ("up", "down", "left", "right", "enter"):
-            if self.prev.get(name) and not cur.get(name):
-                edge = name
-                break
+
+        if chord_now:
+            # Both chord buttons down: don't emit singles; arm/measure the hold.
+            self._suppress = True
+            if self._chord_since is None:
+                self._chord_since = time.time()
+            if not self._chord_fired and time.time() - self._chord_since >= CHORD_HOLD_SECONDS:
+                self._chord_fired = True
+                edge = "back"
+            self.prev = cur
+            return edge
+
+        # Chord not (fully) held right now.
+        self._chord_since = None
+        self._chord_fired = False
+        suppress = self._suppress
+        if not any(cur.values()):
+            self._suppress = False  # cleared for next poll; this one stays suppressed
+        if not suppress:
+            for name in ("up", "down", "left", "right", "enter"):
+                if self.prev.get(name) and not cur.get(name):
+                    edge = name
+                    break
+        # If the physical Back button ever does reach us (e.g. launched over SSH
+        # rather than from brickman), honour it as back too.
         if cur.get("back"):
             edge = "back"
         self.prev = cur
@@ -341,7 +442,8 @@ class Calibrator(object):
                 elif key == "enter":
                     self.run_selected()
                 elif key == "back":
-                    self.exiting = True
+                    if self.confirm_exit():
+                        self.exiting = True
         finally:
             try:
                 self.hw.stop_all()
@@ -373,7 +475,17 @@ class Calibrator(object):
                 lines.append("{} {}".format(mark, items[pos][1]))
         lines.append("LR=grp UD=item")
         lines.append("ENTER=select")
-        self.screen.show(lines)
+        self.screen.show(lines, footer=EXIT_HINT)
+
+    def confirm_exit(self):
+        self.screen.show(["EXIT CALIBRATOR?", "", "ENTER = yes",
+                          "any other = no"], footer=None)
+        while True:
+            key = self.buttons.wait()
+            if key == "enter":
+                return True
+            if key in ("up", "down", "left", "right", "back"):
+                return False
 
     def run_selected(self):
         group, _items = self.current_group()
@@ -562,44 +674,124 @@ class Calibrator(object):
     # ACTION
     # ------------------------------------------------------------------
     def run_action_screen(self, step, run_id):
+        """Run an ACTION while showing/editing the config values it depends on.
+
+        UP/DOWN nudge the selected config value (live, in RAM), LEFT/RIGHT pick
+        which value, ENTER runs the action with the current settings. So you can
+        e.g. bump LEFT_TURN_MIN_SECONDS and re-run the turn until 90 is clean,
+        all without leaving the screen. Edits stay in memory for the rest of the
+        session (the run log records the values each run used); use the ADJUST
+        menu with --write to persist a value to config.py.
+        """
+        params = action_params(step)
+        originals = {name: getattr(config, name) for name, _ in params}
+        cursor = 0
         seq = 0
         while True:
-            self.screen.show([
-                step,
-                "uses config.py",
-                "ENTER=run",
-                "BACK=menu",
-            ])
+            self.render_action_screen(step, params, originals, cursor, seq)
             key = self.buttons.wait()
             if key == "back":
                 return
-            if key != "enter":
+            if not params:
+                if key == "enter":
+                    seq += 1
+                    self.execute_action(step, run_id, seq)
                 continue
-            seq += 1
-            self.hw.beep_start()
-            start = time.time()
-            try:
-                fields = self.run_action_once(step)
-            except (UserAbort, solver.Aborted):
-                self.hw.stop_all()
-                fields = {"elapsed": round(time.time() - start, 3)}
-                self.log.write("ACTION", step, run_id, seq, fields, "aborted")
-                self.hw.beep_abort()
-                self.show_pause(["ABORTED", step], ACTION_RESULT_SECONDS)
-                return
-            except Exception as exc:
-                self.hw.stop_all()
-                fields = {"err": repr(exc), "elapsed": round(time.time() - start, 3)}
-                self.log.write("ACTION", step, run_id, seq, fields, "error")
-                self.hw.beep_error()
-                self.show_pause(["ERROR", step, str(exc)[:26]], ACTION_RESULT_SECONDS)
-                return
-            else:
-                fields["elapsed"] = round(time.time() - start, 3)
-                self.log.write("ACTION", step, run_id, seq, fields, "ok")
-            self.hw.beep_ok()
-            self.show_pause(["DONE", step, "elapsed={:.2f}".format(fields["elapsed"])],
-                            ACTION_RESULT_SECONDS)
+            if key == "left":
+                cursor = (cursor - 1) % len(params)
+            elif key == "right":
+                cursor = (cursor + 1) % len(params)
+            elif key in ("up", "down"):
+                name, pstep = params[cursor]
+                cur_value = getattr(config, name)
+                new_value = self.adjust_value(cur_value, originals[name], pstep,
+                                              1 if key == "up" else -1)
+                self.set_config_live(name, new_value)
+            elif key == "enter":
+                seq += 1
+                self.execute_action(step, run_id, seq)
+
+    def render_action_screen(self, step, params, originals, cursor, seq):
+        lines = ["ACT {}".format(step)[:28]]
+        if not params:
+            lines += ["uses config.py", "(no tunable params)", "ENTER=run"]
+            self.screen.show(lines)
+            return
+        name, pstep = params[cursor]
+        cur_value = getattr(config, name)
+        old_value = originals[name]
+        changed = "*" if cur_value != old_value else "param"
+        lines.append("{} {}/{}  run={}".format(changed, cursor + 1, len(params), seq))
+        lines.append(name)  # full name on its own line
+        lines.append("now={}".format(format_value(cur_value)))
+        lines.append("was={} step={}".format(format_value(old_value), pstep))
+        lines.append("UD=value LR=param ENT=run")
+        self.screen.show(lines)
+
+    def set_config_live(self, name, value):
+        """Apply a config change in memory only, rejecting values that fail
+        validate_config(). Returns True on success."""
+        old = getattr(config, name)
+        if value == old:
+            return True
+        setattr(config, name, value)
+        try:
+            config.validate_config()
+            return True
+        except Exception as exc:
+            setattr(config, name, old)
+            self.hw.beep_error()
+            self.show_pause(["INVALID VALUE", str(exc)[:26]], 1.0)
+            return False
+
+    def execute_action(self, step, run_id, seq):
+        self.hw.beep_start()
+        start = time.time()
+        try:
+            fields = self.run_action_once(step)
+        except (UserAbort, solver.Aborted):
+            self.hw.stop_all()
+            self.log.write("ACTION", step, run_id, seq,
+                           self.with_params(step, {"elapsed": round(time.time() - start, 3)}),
+                           "aborted")
+            self.hw.beep_abort()
+            self.show_pause(["ABORTED", step], ACTION_RESULT_SECONDS)
+            return
+        except Exception as exc:
+            self.hw.stop_all()
+            self.log.write("ACTION", step, run_id, seq,
+                           self.with_params(step, {"err": repr(exc),
+                                                   "elapsed": round(time.time() - start, 3)}),
+                           "error")
+            self.hw.beep_error()
+            self.show_pause(["ERROR", step, str(exc)[:26]], ACTION_RESULT_SECONDS)
+            return
+        fields["elapsed"] = round(time.time() - start, 3)
+        self.log.write("ACTION", step, run_id, seq, self.with_params(step, fields), "ok")
+        self.hw.beep_ok()
+        self.show_pause(["DONE {}".format(step),
+                         "elapsed={:.2f}".format(fields["elapsed"])]
+                        + self.action_result_lines(step, fields),
+                        ACTION_RESULT_SECONDS)
+
+    def with_params(self, step, fields):
+        """Stamp the config values this run used onto the log fields, so each
+        result row ties back to the settings that produced it."""
+        out = dict(fields)
+        for name, _ in action_params(step):
+            out[name] = getattr(config, name)
+        return out
+
+    def action_result_lines(self, step, fields):
+        skip = set(["elapsed"]) | set(name for name, _ in action_params(step))
+        out = []
+        for key in sorted(fields):
+            if key in skip:
+                continue
+            out.append("{}={}".format(key, format_value(fields[key]))[:28])
+            if len(out) >= 3:
+                break
+        return out
 
     def run_action_once(self, step):
         if step == "FOLLOW_ONCE":
@@ -900,7 +1092,9 @@ class Calibrator(object):
         while True:
             state = self.buttons.state()
             speed = 0
-            if state["right"]:
+            if state["left"] and state["right"]:
+                speed = 0  # chord in progress -> hold still, let L+R exit
+            elif state["right"]:
                 speed = abs(config.GRIP_SPEED)
             elif state["left"]:
                 speed = -abs(config.GRIP_SPEED)
@@ -1035,7 +1229,7 @@ class Calibrator(object):
         self.grip_on(sign * abs(speed))
         while True:
             state = self.buttons.state()
-            if state["back"] or state["enter"]:
+            if state["enter"] or (state["left"] and state["right"]):
                 aborted = True
                 break
             pos = self.grip_position()
@@ -1044,7 +1238,7 @@ class Calibrator(object):
                 "GRIP MOVE",
                 "dir={}".format(direction),
                 "deg={}/{}".format(int(delta), degrees),
-                "ENTER/BACK=stop",
+                "ENTER or L+R=stop",
             ])
             if delta >= abs(degrees):
                 break
@@ -1103,7 +1297,7 @@ class Calibrator(object):
                 "new={}".format(format_value(value))[:28],
                 "step={}".format(step),
                 "UD=val LR=step",
-                "ENTER=save BACK=menu",
+                "ENTER=save",
             ])
             key = self.buttons.wait()
             if key == "back":
